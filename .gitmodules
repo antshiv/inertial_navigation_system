@@ -7,3 +7,6 @@
 [submodule "external/dynamic_models"]
 	path = external/dynamic_models
 	url = https://github.com/antshiv/dynamic_models.git
+[submodule "external/attitudeMathLibrary"]
+	path = external/attitudeMathLibrary
+	url = https://github.com/antshiv/attitudeMathLibrary.git
