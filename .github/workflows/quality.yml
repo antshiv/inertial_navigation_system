@@ -1,0 +1,51 @@
+name: End-to-end flight math gates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  strict-loop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Configure strict integration build
+        run: |
+          cmake -S . -B build/strict \
+            -DINS_BUILD_TESTS=ON \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="-Wall -Wextra -Wpedantic -Werror"
+      - name: Build and run INS scenarios
+        run: |
+          cmake --build build/strict --parallel
+          ctest --test-dir build/strict \
+            -R "test_ins|test_closed_loop_attitude" \
+            --output-on-failure
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Configure instrumented integration build
+        run: |
+          cmake -S . -B build/sanitize \
+            -DINS_BUILD_TESTS=ON \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="-Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined -fno-omit-frame-pointer"
+      - name: Run native integration fixtures
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          cmake --build build/sanitize --parallel
+          ./build/sanitize/test_ins
+          ./build/sanitize/test_closed_loop_attitude
