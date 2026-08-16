@@ -1,169 +1,82 @@
-# Inertial Navigation System (INS) Library
+# Inertial Navigation System
 
-The **Inertial Navigation System (INS)** library is a modular and extensible framework written in **C** to provide high performance, portability, and efficiency for embedded systems. It integrates state estimation, control systems, and dynamic models into a single cohesive library for real-time applications such as drones, robotics, and test rigs.
+`inertial_navigation_system` is the pure-C integration layer for calibrated
+sensor samples, estimator timing, and flight-state output. Its first accepted
+milestone is attitude and heading orchestration; full position/velocity inertial
+navigation is not yet implemented.
 
----
+## Accepted Path
 
-## Features
-
-- **Written in C**:
-  - Lightweight and portable for cross-platform compatibility.
-  - Optimized for speed and low memory usage, ideal for low-power MCU applications.
-- **State Estimation**:
-  - Sensor fusion algorithms for IMU, GPS, and barometer data using the `stateEstimation` library.
-- **Control Systems**:
-  - Real-time control algorithms like PID, LQR, and MPC using the `controlSystems` library.
-- **Dynamic Models**:
-  - Physics-based dynamic models for drones and other systems using the `dynamic_models` library.
-- **HAL Integration**:
-  - Hardware abstraction layer (HAL) to interface with sensors and actuators.
-- **Scalability**:
-  - Modular design to extend functionality or integrate additional libraries as needed.
-
----
-
-## Folder Structure
-
-```plaintext
-├── CMakeLists.txt             # Build system configuration
-├── data/                      # Sample input/output data for testing and simulation
-├── examples/                  # Example applications
-│   ├── example_flight_control.c  # Example: INS for drone flight control
-│   └── example_test_rig.c        # Example: INS in the test rig environment
-├── external/                  # External libraries included as Git submodules
-│   ├── controlSystems         # Control systems library
-│   ├── dynamic_models         # Dynamic models library
-│   └── stateEstimation        # State estimation library
-├── include/                   # Public headers
-│   ├── hal.h                  # Hardware abstraction interface
-│   ├── ins.h                  # Main entry point for INS
-│   └── wrappers/              # Wrapper headers for integrating libraries
-├── README.md                  # Overview and usage
-├── src/                       # Core implementation
-│   ├── hal.c                  # HAL implementation
-│   ├── ins.c                  # INS core implementation
-│   └── wrappers/              # Wrapper implementations for integrating libraries
-└── tests/                     # Unit and integration tests
-    ├── test_attitude_math.c   # Test for attitude math functionality
-    ├── test_control_systems.c # Test for control systems functionality
-    ├── test_dynamic_models.c  # Test for dynamic models functionality
-    ├── test_hal.c             # Test for HAL integration
-    ├── test_ins.c             # Test for INS integration
-    └── test_state_estimation.c # Test for state estimation functionality
+```text
+synthetic or calibrated gyro + accel + mag
+                    |
+                    v
+        timestamp-checked INS update
+                    |
+                    v
+      complementary AHRS quaternion/rates
+                    |
+                    v
+       PID -> wrench -> rotor mixer
+                    |
+                    v
+          RK4 rigid-body plant
+                    |
+             sensor generation
+                    +---------------- feedback
 ```
 
----
+The closed-loop fixture starts the simulated vehicle at a 12-degree roll
+disturbance. The controller receives only estimated quaternion and body rates;
+the plant's true state is used only to generate ideal sensor vectors and score
+the trajectory.
 
-## Getting Started
+Current deterministic result:
 
-### **Cloning the Repository**
+```text
+initial attitude error: 0.209440 rad
+final attitude error:   0.000258 rad
+maximum AHRS error:     0.000054 rad
+simulation duration:    5 seconds at 500 Hz
+```
 
-To get started, clone the repository and initialize the submodules:
+## Repository Boundaries
+
+- `stateEstimation` owns AHRS and Kalman equations plus independent oracles.
+- `controlSystems` owns PID and rotor allocation.
+- `dynamic_models` owns the rigid-body plant and numerical propagation.
+- This repository owns sensor timestamps, estimator orchestration, dependency
+  composition, and end-to-end scenarios.
+- Board drivers, calibration, Zephyr tasks, DShot, safety policy, and hardware
+  tests belong to the flight-controller integration repository.
+
+## Build And Test
+
 ```bash
-git clone --recurse-submodules https://github.com/yourusername/inertial_navigation_system.git
+git clone --recursive https://github.com/antshiv/inertial_navigation_system.git
 cd inertial_navigation_system
+cmake -S . -B build \
+  -DINS_BUILD_TESTS=ON \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_C_FLAGS="-Wall -Wextra -Wpedantic -Werror"
+cmake --build build
+ctest --test-dir build --output-on-failure
 ```
 
-If you’ve already cloned the repository without submodules, initialize and update them manually:
-```bash
-git submodule update --init --recursive
-```
+## Deliberate Limits
 
-### **Pulling Updates for Submodules**
+The current loop assumes calibrated, synchronous, disturbance-free sensors and
+an ideal algebraic rotor model. It does not yet model gyro/accelerometer bias
+inside the closed loop, magnetic interference, linear acceleration rejection,
+motor lag, actuator saturation, wind, delay, dropout, position, velocity,
+barometric altitude, GPS, or hardware timing.
 
-If any submodule is updated, you can pull the latest changes:
-```bash
-git submodule update --remote
-```
-
----
-
-## Building the Library
-
-1. **Create a Build Directory**:
-   ```bash
-   mkdir build && cd build
-   ```
-
-2. **Configure the Build System**:
-   Use `cmake` to configure the build:
-   ```bash
-   cmake ..
-   ```
-
-3. **Compile the Library**:
-   Compile the library and examples:
-   ```bash
-   make
-   ```
-
-4. **Run Tests** (optional):
-   Execute the unit and integration tests:
-   ```bash
-   make test
-   ```
-
----
-
-## Usage
-
-### **Integration**
-Include the `ins.h` header file in your application to access the INS API:
-```c
-#include "ins.h"
-```
-
-### **Initialization**
-Initialize the INS library and its components:
-```c
-ins_init();
-```
-
-### **Update Loop**
-Call `ins_update()` periodically (e.g., at 100 Hz) to update the INS state:
-```c
-float dt = 0.01; // 10 ms
-ins_update(dt);
-```
-
-### **Retrieve State**
-Get the current position, velocity, and orientation:
-```c
-float position[3], velocity[3], orientation[3];
-ins_get_state(position, velocity, orientation);
-```
-
----
-
-## Examples
-
-- **Drone Flight Control**:
-  Demonstrates how to use the INS library for real-time drone control (`examples/example_flight_control.c`).
-- **Test Rig Simulation**:
-  Validates INS functionality in a simulated test rig environment (`examples/example_test_rig.c`).
-
----
-
-## Testing
-
-Run unit and integration tests:
-```bash
-cd build
-make test
-```
-
----
-
-## Contributing
-
-We welcome contributions! To contribute:
-1. Fork the repository.
-2. Create a feature branch.
-3. Submit a pull request.
-
----
+PID is the only controller accepted in the closed loop. LQR should be added
+only after a state-space model is tied to the same plant parameters and checked
+against an independent reference. MPC and other controllers follow the same
+rule.
 
 ## License
 
-This library is licensed under the [MIT License](LICENSE).
-```
+The repository does not currently contain a license file. Until one is added,
+no open-source permission should be inferred from this source being public.
